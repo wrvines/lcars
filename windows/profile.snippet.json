@@ -1,0 +1,18 @@
+{
+  "guid": "{7c1a2f5e-47b4-4c1a-9e3d-4c4152533031}",
+  "name": "LCARS",
+  "commandline": "__PWSH__",
+  "colorScheme": "LCARS",
+  "font": {
+    "face": "JetBrains Mono",
+    "size": 12
+  },
+  "backgroundImage": "__LCARS_DIR__/assets/lcars-frame-16x9.png",
+  "backgroundImageOpacity": 0.75,
+  "backgroundImageStretchMode": "fill",
+  "backgroundImageAlignment": "center",
+  "padding": "32, 24, 32, 24",
+  "cursorShape": "filledBox",
+  "antialiasingMode": "grayscale",
+  "scrollbarState": "hidden"
+}

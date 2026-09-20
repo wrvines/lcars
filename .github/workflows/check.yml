@@ -1,0 +1,33 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  self-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Repository self-check
+        run: python3 tools/check.py
+
+      - name: Shell syntax
+        run: |
+          bash -n install/common.sh
+          bash -n install/linux.sh
+          bash -n install/macos.sh
+          bash -n shell/shell.sh
+
+      - name: Generated assets are up to date
+        run: |
+          python3 tools/generate.py
+          python3 tools/make_terminal_profile.py
+          git diff --exit-code

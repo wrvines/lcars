@@ -1,0 +1,86 @@
+# =============================================================================
+# LCARS prompt for Starship — works in zsh, bash, and PowerShell
+# =============================================================================
+# Wired up by the installers through the STARSHIP_CONFIG environment variable,
+# so your global ~/.config/starship.toml is never touched.
+# =============================================================================
+
+add_newline = true
+
+format = """
+[]($style)\
+$os$username$hostname\
+$directory\
+$git_branch$git_status\
+$cmd_duration\
+$time\
+$line_break\
+$character"""
+
+# --- operator / machine ------------------------------------------------------
+
+[os]
+style = "fg:#000000 bg:#CC99CC"
+format = "[ $name ]($style)"
+disabled = false
+
+[username]
+style_user = "fg:#000000 bg:#FF9966"
+style_root = "fg:#000000 bg:#FF5555"
+format = "[ $user ]($style)"
+show_always = true
+
+[hostname]
+style = "fg:#000000 bg:#FFCC99"
+format = "[ $hostname ]($style)"
+ssh_only = true
+
+# --- location ----------------------------------------------------------------
+
+[directory]
+style = "fg:#000000 bg:#FF9900"
+format = "[ $path ]($style)"
+truncation_length = 3
+truncation_symbol = "…/"
+read_only = " RO"
+
+# --- version control ---------------------------------------------------------
+
+[git_branch]
+style = "fg:#000000 bg:#CC99CC"
+format = "[ $symbol$branch ]($style)"
+symbol = "git:"
+
+[git_status]
+style = "fg:#000000 bg:#996699"
+format = "[ $all_status$ahead_behind ]($style)"
+conflicted = " CONFLICT"
+ahead = " +${count}"
+behind = " -${count}"
+diverged = " DIVERGED"
+up_to_date = ""
+untracked = " ?${count}"
+modified = " !${count}"
+staged = " +${count}"
+renamed = " r${count}"
+deleted = " x${count}"
+
+# --- readouts ----------------------------------------------------------------
+
+[cmd_duration]
+style = "fg:#000000 bg:#99CCFF"
+format = "[ took $duration ]($style)"
+min_time = 2000
+
+[time]
+style = "fg:#000000 bg:#996699"
+format = "[ $time ]($style)"
+time_format = "%H:%M"
+disabled = false
+
+# --- prompt character --------------------------------------------------------
+
+[character]
+success_symbol = "[>](bold fg:#FF9900)"
+error_symbol = "[!](bold fg:#FF5555)"
+vimcmd_symbol = "[<](bold fg:#99CCFF)"

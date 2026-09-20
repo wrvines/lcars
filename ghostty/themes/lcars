@@ -1,0 +1,32 @@
+# LCARS theme for Ghostty (optional standalone copy).
+#
+# `install/linux.sh` and `install/macos.sh` inline these colors through
+# ghostty/ghostty.conf, so you do not need this file. If you prefer to use it
+# as a named theme instead:
+#
+#   cp ghostty/themes/lcars ~/.config/ghostty/themes/lcars
+#   # then put `theme = lcars` in your Ghostty config
+
+background = #000000
+foreground = #FFCC99
+cursor-color = #FF9900
+cursor-text = #000000
+selection-background = #CC99CC
+selection-foreground = #000000
+
+palette = 0=#000000
+palette = 1=#CC4455
+palette = 2=#99CC66
+palette = 3=#FFCC66
+palette = 4=#6699CC
+palette = 5=#CC99CC
+palette = 6=#66CCCC
+palette = 7=#FFCC99
+palette = 8=#555577
+palette = 9=#FF6677
+palette = 10=#B3E085
+palette = 11=#FFDD88
+palette = 12=#99CCFF
+palette = 13=#DDB3DD
+palette = 14=#99E0E0
+palette = 15=#FFEECC

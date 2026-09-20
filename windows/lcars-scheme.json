@@ -1,0 +1,23 @@
+{
+  "name": "LCARS",
+  "background": "#000000",
+  "foreground": "#FFCC99",
+  "cursorColor": "#FF9900",
+  "selectionBackground": "#CC99CC",
+  "black": "#000000",
+  "red": "#CC4455",
+  "green": "#99CC66",
+  "yellow": "#FFCC66",
+  "blue": "#6699CC",
+  "purple": "#CC99CC",
+  "cyan": "#66CCCC",
+  "white": "#FFCC99",
+  "brightBlack": "#555577",
+  "brightRed": "#FF6677",
+  "brightGreen": "#B3E085",
+  "brightYellow": "#FFDD88",
+  "brightBlue": "#99CCFF",
+  "brightPurple": "#DDB3DD",
+  "brightCyan": "#99E0E0",
+  "brightWhite": "#FFEECC"
+}

@@ -1,0 +1,38 @@
+{
+  "name": "LCARS",
+  "description": "LCARS (Library Computer Access/Retrieval System) palette interpreted for terminal use. Colors inspired by the Okudagram aesthetic of Star Trek: The Next Generation.",
+  "credit": "Star Trek and LCARS are trademarks of CBS/Paramount. Fan project, not affiliated.",
+  "colors": {
+    "space": "#000000",
+    "sunset": "#FF9900",
+    "amber": "#FFAA55",
+    "peach": "#FFCC99",
+    "salmon": "#FF9966",
+    "lavender": "#CC99CC",
+    "mauve": "#996699",
+    "ice": "#99CCFF",
+    "slate": "#6699CC",
+    "alert": "#FF5555",
+    "warn": "#FFCC66",
+    "ok": "#99CC66",
+    "dim": "#554455"
+  },
+  "ansi": {
+    "black": "#000000",
+    "red": "#CC4455",
+    "green": "#99CC66",
+    "yellow": "#FFCC66",
+    "blue": "#6699CC",
+    "magenta": "#CC99CC",
+    "cyan": "#66CCCC",
+    "white": "#FFCC99",
+    "brightBlack": "#555577",
+    "brightRed": "#FF6677",
+    "brightGreen": "#B3E085",
+    "brightYellow": "#FFDD88",
+    "brightBlue": "#99CCFF",
+    "brightMagenta": "#DDB3DD",
+    "brightCyan": "#99E0E0",
+    "brightWhite": "#FFEECC"
+  }
+}
