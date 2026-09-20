@@ -63,9 +63,9 @@ __lcars_play() {
 }
 
 __lcars_prompt_sound() {
-    local status=$?
+    local lcars_status=$?
     if [ "${LCARS_SOUND:-1}" != "0" ] && [ -n "${LCARS_BEEP_ARMED:-}" ]; then
-        if [ "$status" -eq 0 ]; then
+        if [ "$lcars_status" -eq 0 ]; then
             __lcars_play "$LCARS_DIR/sounds/lcars-ok.wav"
         else
             __lcars_play "$LCARS_DIR/sounds/lcars-alert.wav"
