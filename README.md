@@ -2,15 +2,19 @@
 
 A Star Trek: The Next Generation console for three terminals:
 
-| Terminal | Platform | Palette | Frame art | Shader | Prompt | Splash | Beeps |
+| Terminal | Platform | Palette | Frame | Shader | Prompt | Splash | Beeps |
 |---|---|---|---|---|---|---|---|
-| **Ghostty** | macOS / Linux | ✅ | ✅ | ✅ | ✅ | ✅ image | ✅ custom bell |
-| **Terminal.app** | macOS | ✅ | ✅ (dimmed) | — | ✅ | text | ✅ |
-| **Windows Terminal** | Windows | ✅ | ✅ | — | ✅ | text | ✅ |
+| **Ghostty** | macOS / Linux | ✅ | ✅ size-aware shader | ✅ CRT | ✅ | ✅ image | ✅ custom bell |
+| **Terminal.app** | macOS | ✅ | ✅ dimmed PNG | — | ✅ | text | ✅ |
+| **Windows Terminal** | Windows | ✅ | ✅ PNG | — | ✅ | text | ✅ |
 
-The look comes from four layers: an LCARS color palette, generated frame art
-(PNG) behind the terminal grid, a Starship prompt made of pills, and optional
-extras (fastfetch splash panel, tmux status bar, LCARS chirps).
+The look comes from four layers: an LCARS color palette, an LCARS frame, a
+Starship prompt made of pills, and optional extras (fastfetch splash panel,
+tmux status bar, LCARS chirps).
+
+On Ghostty the frame is drawn by a shader, so it hugs the window edge at any
+size and stays visible over full-screen apps. The other terminals use
+generated frame art (PNG) behind the terminal grid.
 
 Everything is reversible. The installers never rewrite your config files —
 they append marked blocks that `--uninstall` removes surgically, and they
@@ -22,9 +26,9 @@ snapshot anything they touch before touching it.
 
 - **Python 3** — the installers use it for the manifest; the asset generator
   uses only the standard library (no pip installs).
-- **Ghostty 1.2+** for the background frame (`background-image`),
-  **1.3+ on macOS** for the custom audio bell. Older versions still get the
-  palette, prompt, and splash.
+- **Ghostty** for the frame, prompt, and splash (**1.2+** only if you switch
+  the frame to the PNG `background-image` fallback). **1.3+ on macOS** for the
+  custom audio bell. Older versions still get the palette, prompt, and splash.
 - Optional, detected but not required: `starship`, `fastfetch`, `tmux`.
   The installers print hints if they are missing.
 
@@ -90,18 +94,33 @@ sh install/linux.sh --reinstall           # refresh the installed copies
 `tools/generate.py` also takes `--preview` to render an ASCII preview of the
 frame and splash right in your terminal.
 
-### Frame art
+### Frame
 
-Generated variants: 16:9, 21:9, 4:3 (each with an `@2x` retina version) plus a
-dimmed variant for Terminal.app. Pick a different one by editing the
-`background-image` line in the installed `ghostty/ghostty.conf` (Ghostty) or
-`backgroundImage` in Windows Terminal.
+On Ghostty the frame is a post-process shader, `ghostty/shaders/lcars-frame.glsl`:
 
-- **Alignment**: Ghostty stretches the image to the window, and terminal
-  padding is fixed in points, so the frame aligns exactly only at the design
-  sizes. Keep `window-padding-x = 48` or increase it; for exotic window sizes,
-  regenerate the art with a matching canvas by editing the `jobs` list in
-  `tools/generate.py`.
+- **Size-aware**: it is drawn in the window, not stretched with an image. The
+  band thickness follows the window height (clamped), so it stays aligned at
+  any window size, aspect ratio, or DPI. The corner radius scales with the
+  same band, and `window-padding-x/y` only need to clear it — the shipped
+  values (`48` / `40`) hold everywhere.
+- **Always visible**: custom shaders run over the rendered screen, so the
+  frame shows through tmux, editors, and any other app that paints opaque
+  backgrounds. A background image would be covered by those apps.
+- **Tuning**: the defines at the top of the file control the thickness
+  (`BAND_FRACTION`, `BAND_MIN`, `BAND_MAX`) and corner radius
+  (`CORNER_FRACTION`). If you widen the band, raise `window-padding-x/y` to
+  match. Colors are palette values, so `python3 tools/check.py` keeps them in
+  sync with `palette/lcars.json`.
+
+The generated PNG art (`tools/generate.py`) is still used by Terminal.app and
+Windows Terminal. It can also replace the shader on Ghostty: comment the
+`lcars-frame.glsl` `custom-shader` line in `ghostty.conf` and uncomment the
+`background-image` block there.
+
+- **PNG alignment**: Ghostty stretches the image to the window and terminal
+  padding is fixed in points, so the art aligns exactly only at its design
+  size (16:9, 21:9, 4:3). For exotic window sizes, regenerate the art with a
+  matching canvas by editing the `jobs` list in `tools/generate.py`.
 - **Terminal.app**: the background image cannot be installed by a script
   (macOS stores it as a bookmark blob). Set it once in *Terminal → Settings →
   Profiles → LCARS → Text → Background → Image → Choose…* using
@@ -111,10 +130,10 @@ dimmed variant for Terminal.app. Pick a different one by editing the
 
 ### Shader (Ghostty only)
 
-`ghostty/shaders/lcars-crt.glsl` adds subtle scanlines and a vignette. Tune the
-defines at the top of the file, or disable it by commenting the
-`custom-shader` line. Invalid shaders can blank the window — if that happens,
-unset `custom-shader` and reload.
+Two passes ship: `lcars-frame.glsl` (the frame) and `lcars-crt.glsl` (subtle
+scanlines and vignette). Tune the defines at the top of each file, or disable
+a pass by commenting its `custom-shader` line. Invalid shaders can blank the
+window — if that happens, unset `custom-shader` and reload.
 
 ### Prompt
 
@@ -134,13 +153,18 @@ disable just the splash with `LCARS_SPLASH=0`. Volume lives in
 - **Ghostty shows a config error** — run `ghostty +validate-config`. Config
   locations: `~/.config/ghostty/config` (Linux),
   `~/Library/Application Support/com.mitchellh.ghostty/config` (macOS).
-- **Ghostty older than 1.2** — background images and the audio bell are
-  unavailable; everything else works.
-- **Frame text overlap** — raise `window-padding-x` or the relevant value of
-  `window-padding-y` (`top,bottom`) in the installed `ghostty.conf`. Values
-  are points, so they don't scale with the window; tall/high-DPI windows need
-  a larger bottom value to clear the frame's bottom rail. On a 2x display
-  48 points = 96 physical pixels.
+- **Ghostty older than 1.2** — the PNG frame fallback and the audio bell are
+  unavailable; the shader frame, palette, prompt, and splash still work.
+- **Frame text overlap** — with the shader frame the shipped padding always
+  clears the band; if you raise `BAND_FRACTION`/`BAND_MAX` in
+  `lcars-frame.glsl`, raise `window-padding-x/y` to match. If you switched to
+  the PNG art, padding is in points and does not scale with the window, so
+  tall or high-DPI windows need larger values (on a 2x display 48 points = 96
+  physical pixels).
+- **Frame disappears in tmux / an editor** — that is the PNG art being covered
+  by the app's background. Check which layer is active:
+  `ghostty +show-config | grep -E 'background-image|custom-shader'`. The
+  shader frame (the default) cannot be covered by apps.
 - **Windows Terminal didn't change** — the installer patches the settings.json
   it finds (Store, Preview, or unpackaged). If your install is in a different
   location, pass `-SettingsPath`. WT reloads automatically; open a new tab.
@@ -162,7 +186,7 @@ palette/lcars.json              canonical colors (edit me)
 tools/generate.py               frame art + splash + beeps (stdlib only)
 tools/make_terminal_profile.py  Terminal.app profile generator
 tools/check.py                  repo self-check (run before shipping changes)
-ghostty/                        theme, config, CRT shader
+ghostty/                        theme, config, frame + CRT shaders
 terminal-app/LCARS.terminal     generated Terminal.app profile
 windows/                        WT color scheme + profile snippet
 prompt/starship.toml            shared prompt for zsh/bash/PowerShell

@@ -341,6 +341,7 @@ lcars_install_files() {
     lcars_step "Installing LCARS files -> $LCARS_DIR"
     lcars_ensure_dir "$LCARS_DIR"
     lcars_copy "$repo/ghostty/ghostty.conf" "$LCARS_DIR/ghostty/ghostty.conf"
+    lcars_copy "$repo/ghostty/shaders/lcars-frame.glsl" "$LCARS_DIR/ghostty/shaders/lcars-frame.glsl"
     lcars_copy "$repo/ghostty/shaders/lcars-crt.glsl" "$LCARS_DIR/ghostty/shaders/lcars-crt.glsl"
     lcars_copy "$repo/ghostty/themes/lcars" "$LCARS_DIR/ghostty/themes/lcars"
     lcars_copy "$repo/prompt/starship.toml" "$LCARS_DIR/starship.toml"

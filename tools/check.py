@@ -68,8 +68,17 @@ def check_ghostty(palette: dict, values: set) -> None:
             error(f"ghostty/ghostty.conf: {match.group(1)} {match.group(2)} not in palette")
     if "__LCARS_DIR__" not in conf:
         warn("ghostty/ghostty.conf: no __LCARS_DIR__ tokens found (installer expects them)")
-    if not (ROOT / "ghostty" / "shaders" / "lcars-crt.glsl").read_text().count("mainImage"):
-        error("ghostty shader: missing mainImage entry point")
+    for shader in ("lcars-frame", "lcars-crt"):
+        text = (ROOT / "ghostty" / "shaders" / f"{shader}.glsl").read_text()
+        if "mainImage" not in text:
+            error(f"ghostty shader: {shader}.glsl missing mainImage entry point")
+        if shader not in conf:
+            warn(f"ghostty/ghostty.conf: {shader}.glsl not referenced")
+    frame = (ROOT / "ghostty" / "shaders" / "lcars-frame.glsl").read_text()
+    for match in re.finditer(r"#[0-9A-Fa-f]{6}", frame):
+        if not known(values, match.group(0)):
+            error(f"ghostty shader: color {match.group(0)} in lcars-frame.glsl "
+                  "not in palette/lcars.json")
 
 
 def check_windows(values: set) -> None:
@@ -184,6 +193,48 @@ def check_assets() -> None:
                 error(f"{path.name}: expected 44.1kHz mono")
 
 
+SHADER_HARNESS = """#version 430 core
+layout(binding = 0) uniform sampler2D iChannel0;
+layout(binding = 1, std140) uniform Globals {
+    uniform vec3 iResolution;
+    uniform float iTime;
+};
+layout(location = 0) out vec4 _fragColor;
+void mainImage(out vec4 fragColor, in vec2 fragCoord);
+void main() { mainImage(_fragColor, gl_FragCoord.xy); }
+"""
+
+
+def check_shader_syntax() -> None:
+    """Compile each custom shader the way Ghostty does, when glslang is present.
+
+    A shader that fails to compile can leave a Ghostty window blank, so this
+    is worth checking before shipping. CI installs glslang-tools; locally the
+    check is skipped when glslangValidator is not on PATH.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    glslang = shutil.which("glslangValidator")
+    if not glslang:
+        return
+    for shader in ("lcars-frame", "lcars-crt"):
+        source = SHADER_HARNESS + (ROOT / "ghostty" / "shaders" / f"{shader}.glsl").read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            frag = Path(tmp) / f"{shader}.frag"
+            spirv = Path(tmp) / f"{shader}.spv"
+            frag.write_text(source)
+            result = subprocess.run(
+                [glslang, "-V", "--target-env", "vulkan1.2", "-S", "frag",
+                 "-o", str(spirv), str(frag)],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                error(f"ghostty shader: {shader}.glsl failed to compile: "
+                      f"{result.stdout.strip() or result.stderr.strip()}")
+
+
 def check_scripts() -> None:
     for script in ("shell/shell.sh", "install/common.sh", "install/linux.sh", "install/macos.sh"):
         text = (ROOT / script).read_text()
@@ -208,6 +259,7 @@ def main() -> int:
     check_terminal_profile()
     check_tmux(values)
     check_assets()
+    check_shader_syntax()
     check_scripts()
 
     for warning in WARNINGS:
