@@ -103,9 +103,10 @@ dimmed variant for Terminal.app. Pick a different one by editing the
   regenerate the art with a matching canvas by editing the `jobs` list in
   `tools/generate.py`.
 - **Terminal.app**: the background image cannot be installed by a script
-  (macOS stores it as a bookmark blob). Set it once in
-  *Terminal → Settings → Profiles → LCARS → Window → Background Image*, using
-  `assets/lcars-frame-termapp@2x.png`. It is deliberately dimmed because
+  (macOS stores it as a bookmark blob). Set it once in *Terminal → Settings →
+  Profiles → LCARS → Text → Background → Image → Choose…* using
+  `assets/lcars-frame-termapp@2x.png` (on macOS 15 and earlier this setting is
+  under *Window → Background Image*). It is deliberately dimmed because
   Terminal.app has no text padding. The splash overlay is skipped there.
 
 ### Shader (Ghostty only)

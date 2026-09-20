@@ -127,8 +127,9 @@ lcars_platform_install() {
         fi
     fi
     LCARS_TERM_INSTALLED=true
-    lcars_log "background image: Settings > Profiles > LCARS > Window > Background Image"
-    lcars_log "  use assets/lcars-frame-termapp@2x.png for the best result"
+    lcars_log "background image: Settings > Profiles > LCARS > Text > Background > Image"
+    lcars_log "  (macOS 15 and earlier: Window > Background Image)"
+    lcars_log "  choose assets/lcars-frame-termapp@2x.png for the best result"
 }
 
 lcars_platform_uninstall() {

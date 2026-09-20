@@ -6,9 +6,9 @@ NSColor. This script rebuilds that structure with plistlib (stdlib only), so
 the profile can be regenerated whenever the palette changes.
 
 Import on macOS: double-click the .terminal file, or let install/macos.sh
-open it for you. The background image is set separately in
-Terminal > Settings > Profiles > LCARS > Window (bookmark data cannot be
-generated outside macOS).
+open it for you. The background image is set separately in Terminal >
+Settings > Profiles > LCARS > Text > Background (macOS 15 and earlier:
+Window > Background Image); bookmark data cannot be generated outside macOS.
 """
 
 from __future__ import annotations
