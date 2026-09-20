@@ -136,9 +136,11 @@ disable just the splash with `LCARS_SPLASH=0`. Volume lives in
   `~/Library/Application Support/com.mitchellh.ghostty/config` (macOS).
 - **Ghostty older than 1.2** — background images and the audio bell are
   unavailable; everything else works.
-- **Frame text overlap** — raise `window-padding-x`/`window-padding-y` in the
-  installed `ghostty.conf` (values are points, so they don't scale with the
-  window; on a 2x display 48 points = 96 physical pixels).
+- **Frame text overlap** — raise `window-padding-x` or the relevant value of
+  `window-padding-y` (`top,bottom`) in the installed `ghostty.conf`. Values
+  are points, so they don't scale with the window; tall/high-DPI windows need
+  a larger bottom value to clear the frame's bottom rail. On a 2x display
+  48 points = 96 physical pixels.
 - **Windows Terminal didn't change** — the installer patches the settings.json
   it finds (Store, Preview, or unpackaged). If your install is in a different
   location, pass `-SettingsPath`. WT reloads automatically; open a new tab.
