@@ -13,6 +13,7 @@ cursor-color = #FF9900
 cursor-text = #000000
 selection-background = #CC99CC
 selection-foreground = #000000
+bold-color = #FF9900
 
 palette = 0=#000000
 palette = 1=#CC4455

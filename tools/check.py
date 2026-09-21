@@ -63,7 +63,7 @@ def check_ghostty(palette: dict, values: set) -> None:
     conf = (ROOT / "ghostty" / "ghostty.conf").read_text()
     if conf.count("palette = ") != 16:
         error("ghostty/ghostty.conf: expected 16 palette lines")
-    for match in re.finditer(r"^(background|foreground|cursor-color|selection-background)\s*=\s*(#[0-9A-Fa-f]{6})", conf, re.M):
+    for match in re.finditer(r"^(background|foreground|cursor-color|selection-background|bold-color)\s*=\s*(#[0-9A-Fa-f]{6})", conf, re.M):
         if not known(values, match.group(2)):
             error(f"ghostty/ghostty.conf: {match.group(1)} {match.group(2)} not in palette")
     if "__LCARS_DIR__" not in conf:
@@ -79,6 +79,27 @@ def check_ghostty(palette: dict, values: set) -> None:
         if not known(values, match.group(0)):
             error(f"ghostty shader: color {match.group(0)} in lcars-frame.glsl "
                   "not in palette/lcars.json")
+
+
+def check_opencode(values: set) -> None:
+    path = ROOT / "opencode" / "lcars.json"
+    if not path.exists():
+        return
+    try:
+        theme = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        error(f"opencode/lcars.json: {exc}")
+        return
+    defs = theme.get("defs", {})
+    for name, value in defs.items():
+        if name.startswith("lcars") and not known(values, value):
+            error(f"opencode/lcars.json: def {name} = {value} not in palette/lcars.json")
+    for key in ("text", "markdownStrong"):
+        entry = theme.get("theme", {}).get(key, {})
+        for mode in ("dark", "light"):
+            ref = entry.get(mode)
+            if not isinstance(ref, str) or ref not in defs:
+                error(f"opencode/lcars.json: theme.{key}.{mode} references unknown color {ref!r}")
 
 
 def check_windows(values: set) -> None:
@@ -253,6 +274,7 @@ def main() -> int:
     values = {v.upper() for section in ("colors", "ansi")
               for v in palette[section].values()}
     check_ghostty(palette, values)
+    check_opencode(values)
     check_windows(values)
     check_toml()
     check_fastfetch()
