@@ -23,6 +23,7 @@ LCARS_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 LCARS_MANIFEST=""
 LCARS_CREATED=()
 LCARS_PATCHED=()
+LCARS_MANAGED_FILES=()
 LCARS_PYTHON=""
 
 # --- output ------------------------------------------------------------------
@@ -100,6 +101,51 @@ lcars_copy() {
         lcars_die "failed to copy $src -> $dst"
     fi
     LCARS_CREATED+=("$dst")
+}
+
+# Install the OpenCode theme outside LCARS_DIR while preserving its previous
+# contents and any directories created for it.
+lcars_install_opencode_theme() {
+    local src="$1" config_dir theme_dir target entry old_path old_backup old_config_created old_themes_created
+    local backup="" config_created=0 themes_created=0 found=0
+    local -a updated=()
+    config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+    theme_dir="$config_dir/themes"
+    target="$theme_dir/lcars.json"
+    [ -f "$src" ] || lcars_die "missing source file: $src"
+
+    for entry in "${LCARS_MANAGED_FILES[@]}"; do
+        IFS="$LCARS_US" read -r old_path old_backup old_config_created old_themes_created <<EOF
+$entry
+EOF
+        if [ "$old_path" = "$target" ]; then
+            backup="$old_backup"
+            config_created="$old_config_created"
+            themes_created="$old_themes_created"
+            found=1
+        else
+            updated+=("$entry")
+        fi
+    done
+
+    if [ "$found" = 0 ]; then
+        [ -d "$config_dir" ] || config_created=1
+        [ -d "$theme_dir" ] || themes_created=1
+        if [ -f "$target" ]; then
+            lcars_backup "$target"
+            backup="$LCARS_LAST_BACKUP"
+        fi
+    fi
+
+    lcars_step "OpenCode theme"
+    lcars_log "$target"
+    lcars_run mkdir -p "$theme_dir"
+    lcars_run cp "$src" "$target"
+    if ! lcars_dry && [ ! -f "$target" ]; then
+        lcars_die "failed to copy $src -> $target"
+    fi
+    updated+=("$(printf '%s\037%s\037%s\037%s' "$target" "$backup" "$config_created" "$themes_created")")
+    LCARS_MANAGED_FILES=("${updated[@]}")
 }
 
 lcars_replace_token() {
@@ -251,6 +297,25 @@ EOF
             }
         fi
         printf '\n  ],\n'
+        printf '  "managed_files": [\n'
+        if [ "${#LCARS_MANAGED_FILES[@]}" -gt 0 ]; then
+            printf '%s\n' "${LCARS_MANAGED_FILES[@]}" | {
+                _lcars_i=0
+                while IFS= read -r entry; do
+                    local path backup config_created themes_created
+                    IFS="$LCARS_US" read -r path backup config_created themes_created <<EOF
+$entry
+EOF
+                    [ "$_lcars_i" = 0 ] || printf ',\n'
+                    printf '    {"path": "%s", "backup": "%s", "config_dir_created": %s, "themes_dir_created": %s}' \
+                        "$(lcars_json_escape "$path")" "$(lcars_json_escape "$backup")" \
+                        "$( [ "$config_created" = 1 ] && printf true || printf false )" \
+                        "$( [ "$themes_created" = 1 ] && printf true || printf false )"
+                    _lcars_i=1
+                done
+            }
+        fi
+        printf '\n  ],\n'
         printf '  "terminal_app": {\n'
         printf '    "installed": %s,\n' "${LCARS_TERM_INSTALLED:-false}"
         printf '    "profile": "%s",\n' "$(lcars_json_escape "${LCARS_TERM_PROFILE:-}")"
@@ -358,6 +423,7 @@ lcars_install_files() {
         [ -f "$f" ] || continue
         lcars_copy "$f" "$LCARS_DIR/assets/$(basename "$f")"
     done
+    lcars_install_opencode_theme "$repo/opencode/lcars.json"
     lcars_replace_token "$LCARS_DIR/ghostty/ghostty.conf" "__LCARS_DIR__" "$LCARS_DIR"
     lcars_replace_token "$LCARS_DIR/fastfetch.jsonc" "__LCARS_DIR__" "$LCARS_DIR"
 }
@@ -477,6 +543,12 @@ lcars_install() {
         done <<EOF
 $("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" created "$LCARS_MANIFEST" 2>/dev/null)
 EOF
+        while IFS="$LCARS_US" read -r path backup config_created themes_created; do
+            [ -n "$path" ] || continue
+            LCARS_MANAGED_FILES+=("$(printf '%s\037%s\037%s\037%s' "$path" "$backup" "$config_created" "$themes_created")")
+        done <<EOF
+$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" managed "$LCARS_MANIFEST" 2>/dev/null)
+EOF
         local prior_backup
         prior_backup="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" field "$LCARS_MANIFEST" backup_dir)"
         if [ -n "$prior_backup" ] && [ -d "$prior_backup" ]; then
@@ -533,6 +605,10 @@ EOF
 
     if [ "$(type -t lcars_platform_uninstall)" = "function" ]; then
         lcars_platform_uninstall
+    fi
+
+    if [ -f "$LCARS_MANIFEST" ]; then
+        lcars_restore_managed_files "$LCARS_MANIFEST" "" 0
     fi
 
     if [ -f "$LCARS_MANIFEST" ]; then
@@ -605,39 +681,92 @@ lcars_restore_cmd() {
 # --- restore -----------------------------------------------------------------
 
 lcars_restore() {
-    local manifest="$1" ts="${2:-}" dir
+    local manifest="$1" ts="${2:-}" dir="" specific_stamp=0
     [ -f "$manifest" ] || lcars_die "no manifest found at $manifest"
     if [ -n "$ts" ]; then
         dir="$LCARS_DIR/backups/$ts"
         [ -d "$dir" ] || lcars_die "backup directory not found: $dir"
+        specific_stamp=1
     else
         dir="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" field "$manifest" backup_dir)"
         if [ -z "$dir" ] || [ ! -d "$dir" ]; then
             lcars_warn "no backup directory recorded (nothing needed backing up)"
-            return 0
+            dir=""
         fi
     fi
-    lcars_log "restoring files from $dir"
     local path backup start end count=0
-    while IFS="$LCARS_US" read -r path backup start end; do
-        [ -n "$path" ] || continue
-        local rel
-        case "$path" in
-            "$HOME"/*) rel="${path#"$HOME"/}" ;;
-            *) rel="$(printf '%s' "$path" | sed 's|^/||')" ;;
-        esac
-        local src="$dir/$rel"
-        if [ -f "$src" ]; then
-            if lcars_dry; then
-                printf '   [dry-run] restore %s\n' "$path"
-            else
-                cp "$src" "$path"
-                lcars_log "restored $path"
+    if [ -n "$dir" ]; then
+        lcars_log "restoring files from $dir"
+        while IFS="$LCARS_US" read -r path backup start end; do
+            [ -n "$path" ] || continue
+            local rel
+            case "$path" in
+                "$HOME"/*) rel="${path#"$HOME"/}" ;;
+                *) rel="$(printf '%s' "$path" | sed 's|^/||')" ;;
+            esac
+            local src="$dir/$rel"
+            if [ -f "$src" ]; then
+                if lcars_dry; then
+                    printf '   [dry-run] restore %s\n' "$path"
+                else
+                    cp "$src" "$path"
+                    lcars_log "restored $path"
+                fi
+                count=$((count + 1))
             fi
-            count=$((count + 1))
-        fi
-    done <<EOF
+        done <<EOF
 $("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" patched "$manifest" 2>/dev/null)
 EOF
+    fi
     lcars_log "restored $count files"
+    lcars_restore_managed_files "$manifest" "$dir" "$specific_stamp"
+}
+
+lcars_restore_managed_files() {
+    local manifest="$1" dir="${2:-}" specific_stamp="${3:-0}"
+    [ -f "$manifest" ] || return 0
+    local path backup config_created themes_created source rel config_dir theme_dir
+    while IFS="$LCARS_US" read -r path backup config_created themes_created; do
+        [ -n "$path" ] || continue
+        case "$path" in
+            */opencode/themes/lcars.json) ;;
+            *) lcars_warn "refusing to manage unexpected external file: $path"; continue ;;
+        esac
+        source="$backup"
+        if [ "$specific_stamp" = 1 ]; then
+            source=""
+            if [ -n "$dir" ]; then
+                case "$path" in
+                    "$HOME"/*) rel="${path#"$HOME"/}" ;;
+                    *) rel="$(printf '%s' "$path" | sed 's|^/||')" ;;
+                esac
+                source="$dir/$rel"
+            fi
+        fi
+        if [ -n "$source" ] && [ -f "$source" ]; then
+            lcars_run mkdir -p "$(dirname "$path")"
+            lcars_run cp "$source" "$path"
+            lcars_log "restored original OpenCode theme at $path"
+        elif [ -z "$backup" ]; then
+            if [ -f "$path" ]; then
+                lcars_run rm -f "$path"
+                lcars_log "removed installed OpenCode theme at $path"
+            fi
+        elif [ "$specific_stamp" = 1 ]; then
+            lcars_warn "no OpenCode theme backup for $path in selected backup; leaving it unchanged"
+        else
+            lcars_warn "OpenCode theme backup missing for $path; leaving it unchanged"
+        fi
+
+        theme_dir="$(dirname "$path")"
+        config_dir="$(dirname "$theme_dir")"
+        if [ "$themes_created" = 1 ] && [ -d "$theme_dir" ] && [ -z "$(ls -A "$theme_dir" 2>/dev/null)" ]; then
+            lcars_run rmdir "$theme_dir" 2>/dev/null || true
+        fi
+        if [ "$config_created" = 1 ] && [ -d "$config_dir" ] && [ -z "$(ls -A "$config_dir" 2>/dev/null)" ]; then
+            lcars_run rmdir "$config_dir" 2>/dev/null || true
+        fi
+    done <<EOF
+$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" managed "$manifest" 2>/dev/null)
+EOF
 }

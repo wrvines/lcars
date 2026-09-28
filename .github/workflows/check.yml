@@ -29,8 +29,20 @@ jobs:
           bash -n install/macos.sh
           bash -n shell/shell.sh
 
+      - name: OpenCode installer rollback
+        run: bash tests/test-opencode-installer.sh
+
       - name: Generated assets are up to date
         run: |
           python3 tools/generate.py
           python3 tools/make_terminal_profile.py
           git diff --exit-code
+
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: OpenCode installer rollback
+        shell: pwsh
+        run: ./tests/test-opencode-installer.ps1

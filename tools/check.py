@@ -102,6 +102,33 @@ def check_opencode(values: set) -> None:
                 error(f"opencode/lcars.json: theme.{key}.{mode} references unknown color {ref!r}")
 
 
+def check_opencode_installers() -> None:
+    integrations = {
+        "install/common.sh": (
+            "lcars_install_opencode_theme",
+            '"$repo/opencode/lcars.json"',
+            'target="$theme_dir/lcars.json"',
+            '"managed_files"',
+            "lcars_restore_managed_files",
+        ),
+        "install/windows.ps1": (
+            "Install-OpenCodeTheme",
+            "opencode",
+            "Join-Path $OpenCodeThemesDir 'lcars.json'",
+            "managed_files",
+            "Restore-ManagedFiles",
+        ),
+    }
+    for relative, required in integrations.items():
+        content = (ROOT / relative).read_text()
+        for marker in required:
+            if marker not in content:
+                error(f"{relative}: missing OpenCode theme install/rollback integration ({marker})")
+    manifest = (ROOT / "install" / "lib" / "manifest.py").read_text()
+    if 'cmd == "managed"' not in manifest:
+        error("install/lib/manifest.py: missing managed-file manifest reader")
+
+
 def check_windows(values: set) -> None:
     scheme = json.loads((ROOT / "windows" / "lcars-scheme.json").read_text())
     for key, value in scheme.items():
@@ -275,6 +302,7 @@ def main() -> int:
               for v in palette[section].values()}
     check_ghostty(palette, values)
     check_opencode(values)
+    check_opencode_installers()
     check_windows(values)
     check_toml()
     check_fastfetch()

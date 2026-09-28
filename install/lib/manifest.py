@@ -47,6 +47,14 @@ def main() -> int:
                 entry.get("start", ""),
                 entry.get("end", ""),
             ])
+    elif cmd == "managed":
+        for entry in manifest.get("managed_files", []):
+            emit([
+                entry.get("path", ""),
+                entry.get("backup", "") or "",
+                "1" if entry.get("config_dir_created", False) else "0",
+                "1" if entry.get("themes_dir_created", False) else "0",
+            ])
     elif cmd == "patched-entry":
         for entry in manifest.get("patched", []):
             if entry.get("path") == sys.argv[3]:
