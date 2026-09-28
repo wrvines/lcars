@@ -37,6 +37,7 @@ $SchemeName = 'LCARS'
 $ProfileName = 'LCARS'
 $ProfileGuid = '{7c1a2f5e-47b4-4c1a-9e3d-4c4152533031}'
 $Script:Created = New-Object System.Collections.Generic.List[string]
+$Script:ManagedFiles = New-Object System.Collections.Generic.List[object]
 $Script:BackupDir = $null
 $Script:ManifestPath = $null
 
@@ -70,6 +71,11 @@ if (-not $LcarsDir -or $LcarsDir -eq '') {
     $LcarsDir = Join-Path $base 'lcars'
 }
 $Script:ManifestPath = Join-Path $LcarsDir '.lcars-install.json'
+$OpenCodeConfigRoot = $env:XDG_CONFIG_HOME
+if (-not $OpenCodeConfigRoot) { $OpenCodeConfigRoot = Join-Path $HOME '.config' }
+$OpenCodeConfigDir = Join-Path $OpenCodeConfigRoot 'opencode'
+$OpenCodeThemesDir = Join-Path $OpenCodeConfigDir 'themes'
+$OpenCodeThemePath = Join-Path $OpenCodeThemesDir 'lcars.json'
 $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Script:BackupDir = Join-Path (Join-Path $LcarsDir 'backups') $Timestamp
 
@@ -168,20 +174,100 @@ function Copy-Owned([string]$Source, [string]$Destination) {
     $Script:Created.Add($Destination)
 }
 
+function Get-BackupRelativePath([string]$Path) {
+    if ($Path.StartsWith($env:USERPROFILE, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $Path.Substring($env:USERPROFILE.Length).TrimStart('\')
+    }
+    $root = [System.IO.Path]::GetPathRoot($Path)
+    if ($root) { return $Path.Substring($root.Length).TrimStart([char[]]@('\', '/')) }
+    return $Path.TrimStart([char[]]@('\', '/'))
+}
+
 function Backup-File([string]$Path) {
     if (-not (Test-Path $Path)) { return $null }
-    $rel = $Path
-    if ($Path.StartsWith($env:USERPROFILE, [System.StringComparison]::OrdinalIgnoreCase)) {
-        $rel = $Path.Substring($env:USERPROFILE.Length).TrimStart('\')
-    } else {
-        $rel = $Path.TrimStart('\')
-    }
+    $rel = Get-BackupRelativePath $Path
     $dst = Join-Path $Script:BackupDir $rel
     Invoke-Dry {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
         Copy-Item -Force -LiteralPath $Path -Destination $dst
     } "backup $Path -> $dst"
     return $dst
+}
+
+function Install-OpenCodeTheme([string]$Source) {
+    $prior = $null
+    foreach ($entry in $Script:ManagedFiles) {
+        if ($entry.path -eq $OpenCodeThemePath) { $prior = $entry; break }
+    }
+    $backup = $null
+    $configCreated = -not (Test-Path $OpenCodeConfigDir -PathType Container)
+    $themesCreated = -not (Test-Path $OpenCodeThemesDir -PathType Container)
+    if ($prior) {
+        $backup = Get-PropertyValue $prior 'backup' $null
+        $configCreated = [bool](Get-PropertyValue $prior 'config_dir_created' $configCreated)
+        $themesCreated = [bool](Get-PropertyValue $prior 'themes_dir_created' $themesCreated)
+    } elseif (Test-Path -LiteralPath $OpenCodeThemePath -PathType Leaf) {
+        $backup = Backup-File $OpenCodeThemePath
+    }
+
+    Invoke-Dry { New-Item -ItemType Directory -Force -Path $OpenCodeThemesDir | Out-Null } "mkdir $OpenCodeThemesDir"
+    Invoke-Dry { Copy-Item -Force -LiteralPath $Source -Destination $OpenCodeThemePath } "copy $Source -> $OpenCodeThemePath"
+    if (-not $DryRun -and -not (Test-Path -LiteralPath $OpenCodeThemePath -PathType Leaf)) {
+        Write-Fail "failed to copy $Source -> $OpenCodeThemePath"
+    }
+    for ($i = $Script:ManagedFiles.Count - 1; $i -ge 0; $i--) {
+        if ($Script:ManagedFiles[$i].path -eq $OpenCodeThemePath) { $Script:ManagedFiles.RemoveAt($i) }
+    }
+    $Script:ManagedFiles.Add([pscustomobject][ordered]@{
+        path = $OpenCodeThemePath
+        backup = $backup
+        config_dir_created = $configCreated
+        themes_dir_created = $themesCreated
+    })
+}
+
+function Restore-ManagedFiles($Manifest, [string]$BackupDir, [bool]$UseRecordedBackup) {
+    foreach ($entry in @(Get-PropertyValue $Manifest 'managed_files' @())) {
+        $path = Get-PropertyValue $entry 'path' $null
+        if (-not $path) { continue }
+        if ($path -notmatch '[\\/]opencode[\\/]themes[\\/]lcars\.json$') {
+            Write-Warn "refusing to manage unexpected external file: $path"
+            continue
+        }
+        $recordedBackup = Get-PropertyValue $entry 'backup' $null
+        $backup = $recordedBackup
+        if (-not $UseRecordedBackup -and $BackupDir) {
+            $backup = Join-Path $BackupDir (Get-BackupRelativePath $path)
+        }
+
+        if ($backup -and (Test-Path -LiteralPath $backup -PathType Leaf)) {
+            Invoke-Dry { New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null } "mkdir $(Split-Path -Parent $path)"
+            Invoke-Dry { Copy-Item -Force -LiteralPath $backup -Destination $path } "restore $path"
+            Write-Info "restored original OpenCode theme at $path"
+        } elseif (-not $recordedBackup) {
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+                Invoke-Dry { Remove-Item -Force -LiteralPath $path } "rm $path"
+                Write-Info "removed installed OpenCode theme at $path"
+            }
+        } elseif (-not $UseRecordedBackup -and $BackupDir) {
+            Write-Warn "no OpenCode theme backup for $path in selected backup; leaving it unchanged"
+        } else {
+            Write-Warn "OpenCode theme backup missing for $path; leaving it unchanged"
+        }
+
+        $themesDir = Split-Path -Parent $path
+        $configDir = Split-Path -Parent $themesDir
+        $themesCreated = [bool](Get-PropertyValue $entry 'themes_dir_created' $false)
+        $configCreated = [bool](Get-PropertyValue $entry 'config_dir_created' $false)
+        if ($themesCreated -and (Test-Path $themesDir -PathType Container) -and
+            -not (Get-ChildItem -LiteralPath $themesDir -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+            Invoke-Dry { Remove-Item -Force -LiteralPath $themesDir } "rmdir $themesDir"
+        }
+        if ($configCreated -and (Test-Path $configDir -PathType Container) -and
+            -not (Get-ChildItem -LiteralPath $configDir -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+            Invoke-Dry { Remove-Item -Force -LiteralPath $configDir } "rmdir $configDir"
+        }
+    }
 }
 
 function Get-WtSettingsPath {
@@ -289,6 +375,9 @@ function Install-Lcars {
         Write-Fail "LCARS already installed (manifest: $Script:ManifestPath). Use -Reinstall to refresh, or -Uninstall first."
     }
     if ($manifest) {
+        foreach ($entry in @(Get-PropertyValue $manifest 'managed_files' @())) {
+            $Script:ManagedFiles.Add($entry)
+        }
         $priorBackup = Get-PropertyValue $manifest 'backup_dir' $null
         if ($priorBackup -and (Test-Path $priorBackup)) {
             $Script:BackupDir = $priorBackup
@@ -327,6 +416,7 @@ function Install-Lcars {
     foreach ($asset in Get-ChildItem -Path (Join-Path $HERE '..\assets') -Filter '*.png') {
         Copy-Owned $asset.FullName (Join-Path (Join-Path $LcarsDir 'assets') $asset.Name)
     }
+    Install-OpenCodeTheme (Join-Path (Join-Path $Repo 'opencode') 'lcars.json')
 
     # token substitution in fastfetch config (JSON-escaped path)
     $ffPath = Join-Path $LcarsDir 'fastfetch.jsonc'
@@ -456,6 +546,7 @@ function Install-Lcars {
                 end    = $MarkEnd
             }
         )
+        managed_files  = @($Script:ManagedFiles.ToArray())
         json_patch     = $jsonPatch
     }
     if ($DryRun) {
@@ -501,6 +592,7 @@ function Uninstall-Lcars {
         foreach ($entry in @($manifest.patched)) {
             if ($entry.path) { Remove-MarkedBlock $entry.path }
         }
+        Restore-ManagedFiles $manifest $null $true
     }
 
     # Windows Terminal: remove scheme + profile, restore default
@@ -589,10 +681,11 @@ function Restore-Lcars([string]$Stamp) {
         $dir = $manifest.backup_dir
         if (-not $dir -or -not (Test-Path $dir)) {
             Write-Warn "no backup directory recorded (nothing needed backing up)"
-            return
+            $dir = $null
         }
     }
 
+    if ($dir) {
     Write-Step "Restoring files from $dir"
     foreach ($entry in @($manifest.patched)) {
         $path = $entry.path
@@ -609,10 +702,12 @@ function Restore-Lcars([string]$Stamp) {
             Write-Info "restored $path"
         }
     }
+    }
     if ($manifest.json_patch -and $manifest.json_patch.backup -and (Test-Path $manifest.json_patch.backup)) {
         Invoke-Dry { Copy-Item -Force -LiteralPath $manifest.json_patch.backup -Destination $manifest.json_patch.settings_path } "restore $($manifest.json_patch.settings_path)"
         Write-Info "restored $($manifest.json_patch.settings_path)"
     }
+    Restore-ManagedFiles $manifest $dir (-not [bool]$Stamp)
     Write-Step "Done"
     if ($DryRun) { Write-Info "dry-run complete - nothing was changed" }
     else { Write-Info "files rolled back to their pre-install state; run -Reinstall to re-enable LCARS" }

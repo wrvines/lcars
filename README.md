@@ -68,6 +68,7 @@ After installing, open a new terminal window/tab.
 | Where | What | How it is undone |
 |---|---|---|
 | `~/.config/lcars` (macOS/Linux), `%LOCALAPPDATA%\lcars` (Windows) | owned outright: themes, frame art, sounds, starship/fastfetch config | directory removed (backups kept unless `--purge`) |
+| OpenCode themes (`$XDG_CONFIG_HOME/opencode/themes/lcars.json`; default `~/.config/...`, also `%USERPROFILE%\.config\...` on Windows) | LCARS theme; a pre-existing `lcars.json` is backed up | original file restored, or new file removed |
 | Ghostty `config` | `config-file = .../ghostty.conf` inside a `# >>> lcars >>>` block | block removed |
 | `~/.zshrc` / `~/.bashrc` | source line inside a marked block | block removed |
 | `~/.tmux.conf` or `~/.config/tmux/tmux.conf` | `source-file` inside a marked block | block removed |
@@ -144,13 +145,15 @@ window — if that happens, unset `custom-shader` and reload.
 
 `opencode/lcars.json` is a drop-in [opencode](https://opencode.ai) theme built
 from the bundled `opencode` theme with two LCARS changes: the text you type is
-amber (`#FFAA55`) and bold items in replies are sunset (`#FF9900`).
+amber (`#FFAA55`) and bold items in replies are sunset (`#FF9900`). The Linux
+and macOS installers copy it to `$XDG_CONFIG_HOME/opencode/themes/lcars.json`
+(`~/.config/opencode/themes/lcars.json` when `XDG_CONFIG_HOME` is unset); the
+Windows installer uses the same path under your home directory unless
+`XDG_CONFIG_HOME` is set. Reinstall refreshes the installed copy, and restore
+or uninstall returns a previous `lcars.json` or removes the new file.
 
-```sh
-mkdir -p ~/.config/opencode/themes
-cp opencode/lcars.json ~/.config/opencode/themes/
-# then set "theme": "lcars" in ~/.config/opencode/tui.json, or use /themes
-```
+After installing, select `lcars` with OpenCode's `/theme` command, or set
+`"theme": "lcars"` in its TUI configuration.
 
 ### Sound
 
@@ -201,7 +204,7 @@ tools/check.py                  repo self-check (run before shipping changes)
 ghostty/                        theme, config, frame + CRT shaders
 terminal-app/LCARS.terminal     generated Terminal.app profile
 windows/                        WT color scheme + profile snippet
-opencode/lcars.json             opencode TUI theme (amber input, sunset bold)
+opencode/lcars.json             OpenCode TUI theme source (installed by platform installers)
 prompt/starship.toml            shared prompt for zsh/bash/PowerShell
 fastfetch/config.jsonc          splash config (Kitty image on Ghostty)
 tmux/lcars.conf                 status bar theme
