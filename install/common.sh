@@ -191,29 +191,6 @@ lcars_block_upsert() {
     fi
 }
 
-# lcars_block_remove FILE START END — returns 0 if the file was modified
-lcars_block_remove() {
-    local file="$1" start="$2" end="$3"
-    [ -f "$file" ] || return 0
-    if ! grep -qF "$start" "$file"; then
-        return 0
-    fi
-    if lcars_dry; then
-        printf '   [dry-run] remove marked block from %s\n' "$file"
-        return 0
-    fi
-    local tmp="$file.lcars-tmp"
-    awk -v s="$start" -v e="$end" '
-        index($0, s) { skip = 1; next }
-        index($0, e) { skip = 0; next }
-        !skip { print }
-    ' "$file" > "$tmp" && mv "$tmp" "$file"
-    # collapse trailing blank lines we introduced
-    awk 'BEGIN { blanks = 0 } /^[[:space:]]*$/ { blanks++; next } { while (blanks > 0) { print ""; blanks-- } print }' \
-        "$file" > "$tmp" && mv "$tmp" "$file"
-    return 0
-}
-
 # --- manifest ----------------------------------------------------------------
 
 lcars_manifest_write() {
@@ -308,25 +285,6 @@ lcars_tmux_config() {
     fi
 }
 
-# --- deletion safety ---------------------------------------------------------
-
-lcars_remove_owned() {
-    local path="$1"
-    case "$path" in
-        "$LCARS_DIR"/*) ;;
-        *)
-            lcars_warn "refusing to delete path outside LCARS dir: $path"
-            return 0
-            ;;
-    esac
-    [ -e "$path" ] || return 0
-    if [ -d "$path" ]; then
-        lcars_run rmdir "$path" 2>/dev/null || true
-    else
-        lcars_run rm -f "$path"
-    fi
-}
-
 # --- install flows -----------------------------------------------------------
 
 lcars_quote_value() {
@@ -349,6 +307,9 @@ lcars_install_files() {
     lcars_copy "$repo/tmux/lcars.conf" "$LCARS_DIR/tmux.conf"
     lcars_copy "$repo/shell/shell.sh" "$LCARS_DIR/shell.sh"
     lcars_copy "$repo/powershell/profile.ps1" "$LCARS_DIR/profile.ps1"
+    # Self-contained uninstaller: survives deletion/moving of the repository.
+    lcars_copy "$repo/install/uninstall.sh" "$LCARS_DIR/uninstall.sh"
+    lcars_run chmod +x "$LCARS_DIR/uninstall.sh" 2>/dev/null || true
     local f
     for f in "$repo"/sounds/*.wav; do
         [ -f "$f" ] || continue
@@ -503,141 +464,10 @@ EOF
         lcars_log "LCARS installed to $LCARS_DIR"
         lcars_log "restart your terminal(s) to see the theme"
         lcars_log "toggles: LCARS_SPLASH=0 (no splash), LCARS_SOUND=0 (no beeps)"
-        lcars_log "uninstall: sh install/$(basename "$0") --uninstall"
+        lcars_log "uninstall: sh install/uninstall.sh  (or: sh \"$LCARS_DIR/uninstall.sh\")"
     fi
 }
 
-lcars_uninstall() {
-    local purge="$1" n=0
-    lcars_preflight
-    lcars_step "Uninstalling LCARS"
-
-    if [ ! -f "$LCARS_MANIFEST" ]; then
-        lcars_warn "no manifest at $LCARS_MANIFEST — best-effort removal"
-    fi
-
-    if [ -f "$LCARS_MANIFEST" ]; then
-        while IFS="$LCARS_US" read -r path backup start end; do
-            [ -n "$path" ] || continue
-            if [ -f "$path" ] && grep -qF "$start" "$path"; then
-                lcars_block_remove "$path" "$start" "$end"
-                lcars_log "cleaned $path"
-                n=$((n + 1))
-            elif [ -f "$path" ]; then
-                lcars_warn "marker missing in $path (hand-edited?) — leaving that file alone"
-            fi
-        done <<EOF
-$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" patched "$LCARS_MANIFEST" 2>/dev/null)
-EOF
-    fi
-
-    if [ "$(type -t lcars_platform_uninstall)" = "function" ]; then
-        lcars_platform_uninstall
-    fi
-
-    if [ -f "$LCARS_MANIFEST" ]; then
-        while IFS= read -r p; do
-            [ -n "$p" ] || continue
-            case "$p" in
-                "$LCARS_DIR"/*)
-                    lcars_remove_owned "$p"
-                    ;;
-                *)
-                    if [ -f "$p" ] && ! grep -q '[^[:space:]]' "$p"; then
-                        lcars_run rm -f "$p"
-                        lcars_log "removed empty file $p"
-                    fi
-                    ;;
-            esac
-        done <<EOF
-$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" created "$LCARS_MANIFEST" 2>/dev/null)
-EOF
-    fi
-
-    if [ -d "$LCARS_DIR" ] && ! lcars_dry; then
-        find "$LCARS_DIR" -type d 2>/dev/null | awk '{ print length, $0 }' \
-            | sort -rn | cut -d' ' -f2- | while IFS= read -r d; do
-            [ "$d" = "$LCARS_DIR" ] && continue
-            case "$d" in
-                */backups|*/backups/*) continue ;;
-            esac
-            rmdir "$d" 2>/dev/null || true
-        done
-    fi
-
-    if [ "$purge" = 1 ]; then
-        if [ -d "$LCARS_DIR" ]; then
-            if [ -f "$LCARS_MANIFEST" ] || [ "$LCARS_ASSUME_YES" = 1 ]; then
-                lcars_run rm -rf "$LCARS_DIR"
-                lcars_log "purged $LCARS_DIR (including backups)"
-            else
-                lcars_warn "refusing to purge without a manifest; use --yes"
-            fi
-        fi
-    fi
-
-    [ -f "$LCARS_MANIFEST" ] && lcars_run rm -f "$LCARS_MANIFEST"
-
-    lcars_step "Done"
-    lcars_log "removed LCARS blocks ($n files)"
-    if [ "$purge" != 1 ] && [ -d "$LCARS_DIR/backups" ]; then
-        lcars_log "backups kept in $LCARS_DIR/backups (use --purge to remove)"
-    fi
-    lcars_log "restart your terminal(s) for a clean shell"
-}
-
-lcars_restore_cmd() {
-    local ts="$1"
-    lcars_preflight
-    lcars_restore "$LCARS_MANIFEST" "$ts"
-    if [ "$(type -t lcars_platform_restore)" = "function" ]; then
-        lcars_platform_restore
-    fi
-    lcars_step "Done"
-    if lcars_dry; then
-        lcars_log "dry-run complete — nothing was changed"
-    else
-        lcars_log "files rolled back to their pre-install state"
-        lcars_log "marked blocks are gone from restored files; run with --reinstall to re-enable LCARS"
-    fi
-}
-
-# --- restore -----------------------------------------------------------------
-
-lcars_restore() {
-    local manifest="$1" ts="${2:-}" dir
-    [ -f "$manifest" ] || lcars_die "no manifest found at $manifest"
-    if [ -n "$ts" ]; then
-        dir="$LCARS_DIR/backups/$ts"
-        [ -d "$dir" ] || lcars_die "backup directory not found: $dir"
-    else
-        dir="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" field "$manifest" backup_dir)"
-        if [ -z "$dir" ] || [ ! -d "$dir" ]; then
-            lcars_warn "no backup directory recorded (nothing needed backing up)"
-            return 0
-        fi
-    fi
-    lcars_log "restoring files from $dir"
-    local path backup start end count=0
-    while IFS="$LCARS_US" read -r path backup start end; do
-        [ -n "$path" ] || continue
-        local rel
-        case "$path" in
-            "$HOME"/*) rel="${path#"$HOME"/}" ;;
-            *) rel="$(printf '%s' "$path" | sed 's|^/||')" ;;
-        esac
-        local src="$dir/$rel"
-        if [ -f "$src" ]; then
-            if lcars_dry; then
-                printf '   [dry-run] restore %s\n' "$path"
-            else
-                cp "$src" "$path"
-                lcars_log "restored $path"
-            fi
-            count=$((count + 1))
-        fi
-    done <<EOF
-$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" patched "$manifest" 2>/dev/null)
-EOF
-    lcars_log "restored $count files"
-}
+# Uninstall and restore are handled by the self-contained install/uninstall.sh,
+# which the installer also drops at $LCARS_DIR/uninstall.sh. The platform
+# scripts simply exec it; see install/linux.sh and install/macos.sh.

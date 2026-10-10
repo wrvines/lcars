@@ -271,7 +271,12 @@ def check_shader_syntax() -> None:
 
 
 def check_scripts() -> None:
-    for script in ("shell/shell.sh", "install/common.sh", "install/linux.sh", "install/macos.sh"):
+    for script in ("shell/shell.sh", "install/common.sh", "install/linux.sh",
+                   "install/macos.sh", "install/uninstall.sh", "uninstall.sh",
+                   "uninstall-macos.sh", "tools/test-uninstall.sh"):
+        if not (ROOT / script).exists():
+            error(f"{script}: missing")
+            continue
         text = (ROOT / script).read_text()
         if "lcars-ok.wav" in text or "lcars-alert.wav" in text or "lcars-confirm.wav" in text:
             for sound in ("lcars-ok", "lcars-alert", "lcars-confirm"):
@@ -281,6 +286,31 @@ def check_scripts() -> None:
     for sound in ("lcars-ok", "lcars-alert"):
         if sound in ps and not (ROOT / "sounds" / f"{sound}.wav").exists():
             error(f"powershell/profile.ps1: references missing sounds/{sound}.wav")
+
+
+def check_uninstaller() -> None:
+    """The uninstaller must ship for every platform and be self-contained."""
+    for script in ("install/uninstall.sh", "uninstall.sh", "uninstall-macos.sh",
+                   "install/uninstall.ps1", "uninstall.ps1"):
+        path = ROOT / script
+        if not path.exists() or not path.read_text().strip():
+            error(f"{script}: missing or empty")
+            continue
+        if script in ("install/uninstall.sh", "uninstall-macos.sh") and \
+                "# >>> lcars >>>" not in path.read_text():
+            error(f"{script}: does not know the LCARS block marker")
+
+    # The installer must copy the uninstaller into the install directory.
+    common = (ROOT / "install" / "common.sh").read_text()
+    if "install/uninstall.sh" not in common:
+        warn("install/common.sh does not copy install/uninstall.sh into LCARS_DIR")
+    windows = (ROOT / "install" / "windows.ps1").read_text()
+    if "uninstall.ps1" not in windows:
+        warn("install/windows.ps1 does not copy install/uninstall.ps1 into LCARS_DIR")
+
+    readme = (ROOT / "README.md").read_text()
+    if "uninstall" not in readme.lower():
+        error("README.md: no uninstall instructions")
 
 
 def check_color_sources(values: set) -> None:
@@ -305,6 +335,7 @@ def main() -> int:
     check_assets()
     check_shader_syntax()
     check_scripts()
+    check_uninstaller()
     check_color_sources(values)
 
     for warning in WARNINGS:

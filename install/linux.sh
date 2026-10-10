@@ -94,9 +94,17 @@ case "$MODE" in
         lcars_install "$LCARS_REPO" "$WITH_GHOSTTY" "$WITH_SHELL" "$WITH_TMUX"
         ;;
     uninstall)
-        lcars_uninstall "$PURGE"
+        set --
+        [ "$LCARS_DRY_RUN" = 1 ] && set -- "$@" --dry-run
+        [ "$LCARS_ASSUME_YES" = 1 ] && set -- "$@" --yes
+        [ "$PURGE" = 1 ] && set -- "$@" --purge
+        exec sh "$LCARS_HERE/uninstall.sh" "$@"
         ;;
     restore)
-        lcars_restore_cmd "$RESTORE_TS"
+        set -- --restore
+        [ "$LCARS_DRY_RUN" = 1 ] && set -- "$@" --dry-run
+        [ "$LCARS_ASSUME_YES" = 1 ] && set -- "$@" --yes
+        [ -n "$RESTORE_TS" ] && set -- "$@" "$RESTORE_TS"
+        exec sh "$LCARS_HERE/uninstall.sh" "$@"
         ;;
 esac

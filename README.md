@@ -17,8 +17,11 @@ size and stays visible over full-screen apps. The other terminals use
 generated frame art (PNG) behind the terminal grid.
 
 Everything is reversible. The installers never rewrite your config files —
-they append marked blocks that `--uninstall` removes surgically, and they
-snapshot anything they touch before touching it.
+they append marked blocks that the uninstaller removes surgically, and they
+snapshot anything they touch before touching it. A self-contained uninstaller
+is installed alongside the theme (`~/.config/lcars/uninstall.sh`, or
+`%LOCALAPPDATA%\lcars\uninstall.ps1`), so you can remove LCARS even after
+deleting this repository — you do not need the manifest or the original clone.
 
 ---
 
@@ -49,24 +52,112 @@ powershell -ExecutionPolicy Bypass -File install\windows.ps1
 
 ### Uninstalling
 
-Run the installer matching the platform you installed with, from the repository
-root — the scripts share `~/.config/lcars`, but only the right script knows how
-to undo that platform's integration (Terminal.app, Windows Terminal):
+The simplest way is from this repository:
 
 ```sh
-sh install/linux.sh --uninstall                 # Linux
-sh install/macos.sh --uninstall                 # macOS
-sh install/macos.sh --uninstall --purge         # macOS, also delete backups
+sh uninstall.sh                       # macOS / Linux
+# or: sh install/linux.sh --uninstall
+#     sh install/macos.sh --uninstall
+```
+
+```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File install\windows.ps1 -Uninstall
 ```
 
-Then open a new terminal window/tab. `--uninstall` removes the marked config
-blocks and the files the installer created, restores whatever default it
-changed, and deletes its manifest at `~/.config/lcars/.lcars-install.json`.
-Because that manifest is gone, `--restore` and `--reinstall` no longer work
-afterwards, and another platform's installer can no longer finish the cleanup —
-so use the same script you installed with. Backups stay on disk unless you add
-`--purge` (`-Uninstall -Purge` on Windows).
+The uninstaller is **self-contained**: it finds the marked config blocks and
+the theme files by itself, so it works whether or not the install manifest is
+still present.
+
+If you installed (or ran `--reinstall`) with this version, the installer also
+dropped a copy next to the theme, so you can uninstall without the repository:
+
+```sh
+sh ~/.config/lcars/uninstall.sh
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\lcars\uninstall.ps1"
+```
+
+If that file is missing — for example your install predates this version — use
+the repository commands above. (Reinstalling is not required: the repository
+script uninstalls an older install just as well.)
+
+**Run the uninstaller on the machine where LCARS is installed.** These scripts
+only change the computer they run on, so a Linux repo cannot clean up a Mac.
+If the repository (or the shipped copy above) is not on the machine you want to
+clean, do one of these on *that* machine:
+
+- clone this repository there and run `sh uninstall.sh`; or
+- copy the single self-contained file
+  [`uninstall-macos.sh`](uninstall-macos.sh) across and run it — this is the
+  one-file macOS uninstaller, useful when you only have this repo on another
+  machine:
+
+  ```sh
+  # on the machine that has the repo (e.g. a Linux box):
+  scp uninstall-macos.sh you@mac.local:~/
+
+  # on the Mac:
+  sh ~/uninstall-macos.sh --dry-run   # preview
+  sh ~/uninstall-macos.sh             # remove LCARS
+  sh ~/uninstall-macos.sh --purge     # also delete backups
+  ```
+
+  It hands off to the full uninstaller when one is present (the repo's
+  `install/uninstall.sh` or `~/.config/lcars/uninstall.sh`), and otherwise
+  removes the marked blocks, the theme files and the Terminal.app profile by
+  itself. It needs nothing else from the repository, and works on an old
+  install with no manifest. (Any platform can copy `install/uninstall.sh` the
+  same way; it is self-contained too.); or
+- remove it by hand:
+
+```sh
+# 1. remove the marked block from each config file (repeat for your files)
+for f in ~/.zshrc ~/.bashrc ~/.config/ghostty/config \
+         "$HOME/Library/Application Support/com.mitchellh.ghostty/config" \
+         ~/.tmux.conf ~/.config/tmux/tmux.conf; do
+  [ -f "$f" ] || continue
+  awk '/# >>> lcars >>>/{s=1;next} /# <<< lcars <<</{s=0;next} !s' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
+# 2. delete the theme files
+rm -rf ~/.config/lcars
+# 3. macOS only: quit Terminal, then remove the profile (optional)
+/usr/libexec/PlistBuddy -c "Delete :Window Settings:LCARS" \
+  ~/Library/Preferences/com.apple.Terminal.plist 2>/dev/null
+killall cfprefsd 2>/dev/null
+```
+
+Then open a new terminal window/tab. The uninstaller removes the marked blocks
+from your shell rc, Ghostty config, tmux config and PowerShell profile; removes
+the LCARS files; restores the default profile it changed (Windows Terminal,
+Terminal.app); and deletes the manifest. Backups are kept in
+`<lcars dir>/backups/` unless you ask for `--purge` (`-Purge` on Windows).
+
+Useful flags (all platforms; PowerShell uses `-DryRun`, `-Yes`, `-Purge`):
+
+```sh
+sh ~/.config/lcars/uninstall.sh --dry-run   # show every change, touch nothing
+sh ~/.config/lcars/uninstall.sh --yes       # no prompts
+sh ~/.config/lcars/uninstall.sh --purge     # also delete backups + the LCARS dir
+sh ~/.config/lcars/uninstall.sh --restore   # roll files back to pre-install state
+sh ~/.config/lcars/uninstall.sh --dir ~/.config/lcars   # custom install directory
+```
+
+If you installed to a custom `LCARS_DIR`, pass `--dir` (or set `LCARS_DIR`) so
+the uninstaller looks in the right place. Nothing is destroyed that LCARS did
+not create: the uninstaller only deletes files under the LCARS directory and
+only edits files that still contain the `# >>> lcars >>>` marker.
+
+Two cases where cleanup cannot be fully automatic:
+
+- **Terminal.app was open** — macOS caches the profile list while it runs, so
+  quit Terminal and rerun, or remove the profile by hand:
+  *Terminal → Settings → Profiles → LCARS → ⊖*.
+- **You edited a marked block by hand** and broke the marker — the uninstaller
+  warns about the file instead of guessing. Remove the leftover LCARS lines
+  manually; the warning names the file.
 
 ### Other modes
 
@@ -81,7 +172,9 @@ sh install/linux.sh --restore 20260919-193010   # a specific backup stamp
 sh install/linux.sh --reinstall    # refresh files over an existing install
 ```
 
-`--dry-run` combines with any mode, e.g. `--uninstall --dry-run`.
+`--dry-run` combines with any mode, e.g. `--uninstall --dry-run`. `--restore`
+and `--reinstall` need the manifest, so they stop working once you have
+uninstalled; `--reinstall` recreates everything from the repository.
 
 After installing, open a new terminal window/tab.
 
@@ -89,11 +182,11 @@ After installing, open a new terminal window/tab.
 
 | Where | What | How it is undone |
 |---|---|---|
-| `~/.config/lcars` (macOS/Linux), `%LOCALAPPDATA%\lcars` (Windows) | owned outright: themes, frame art, sounds, starship/fastfetch config | directory removed (backups kept unless `--purge`) |
+| `~/.config/lcars` (macOS/Linux), `%LOCALAPPDATA%\lcars` (Windows) | owned outright: themes, frame art, sounds, starship/fastfetch config, **and the uninstaller itself** | directory removed (backups kept unless `--purge`) |
 | Ghostty `config` | `config-file = .../ghostty.conf` inside a `# >>> lcars >>>` block | block removed |
 | `~/.zshrc` / `~/.bashrc` | source line inside a marked block | block removed |
 | `~/.tmux.conf` or `~/.config/tmux/tmux.conf` | `source-file` inside a marked block | block removed |
-| PowerShell `$PROFILE` | `#region`-style marked block dot-sourcing `profile.ps1` | block removed |
+| PowerShell `$PROFILE` | marked block dot-sourcing `profile.ps1` | block removed |
 | `~/.config/starship.toml` | **never touched** — `STARSHIP_CONFIG` is set inside the block | env var disappears with the block |
 | Windows Terminal `settings.json` | `LCARS` scheme + profile (fixed GUID), default profile set | entries removed, previous default restored |
 | Terminal.app | profile imported, set as default | profile removed, previous default restored |
@@ -203,8 +296,25 @@ disable just the splash with `LCARS_SPLASH=0`. Volume lives in
 - **Windows Terminal didn't change** — the installer patches the settings.json
   it finds (Store, Preview, or unpackaged). If your install is in a different
   location, pass `-SettingsPath`. WT reloads automatically; open a new tab.
-- **Terminal.app profile** — if Terminal was running during uninstall, remove
-  the profile manually: *Settings → Profiles → LCARS → ⊖*.
+- **Terminal.app profile** — if Terminal was running during uninstall, quit it
+  and rerun `sh ~/.config/lcars/uninstall.sh`, or remove the profile manually:
+  *Settings → Profiles → LCARS → ⊖*.
+- **Uninstall did nothing / "no manifest found"** — that is fine: the
+  uninstaller also works without the manifest. If it still finds nothing,
+  point it at your install directory with `--dir` (or `-LcarsDir` on Windows),
+  e.g. `sh ~/.config/lcars/uninstall.sh --dir ~/.config/lcars`.
+- **`sh: install/macos.sh: No such file or directory`** — you are not in the
+  repository root, or the repo is not on the machine you ran the command on.
+  The scripts only affect the computer they run on; run them on the machine
+  where LCARS is installed (see [Uninstalling](#uninstalling)).
+- **`sh ~/.config/lcars/uninstall.sh` → "No such file"** — the shipped copy
+  only exists if you installed with a version that includes it. Run
+  `sh uninstall.sh` from the repository instead. If the repository is also
+  gone, remove the `# >>> lcars >>>` … `# <<< lcars <<<` block from your shell
+  rc, Ghostty config and tmux config, then delete `~/.config/lcars` by hand.
+- **A leftover `lcars` line after uninstall** — a marked block was edited by
+  hand and lost its `# >>> lcars >>>` marker. The uninstaller names the file in
+  a warning; delete the leftover lines and rerun.
 - **Command not found: starship / fastfetch** — install them and restart the
   shell: `brew install starship fastfetch` (macOS), `winget install
   Starship.Starship fastfetch` (Windows), or see
@@ -232,6 +342,11 @@ shell/shell.sh                  zsh/bash integration
 powershell/profile.ps1          PowerShell integration
 assets/, sounds/                generated at build time
 install/                        per-OS installers with manifest + backups
+install/uninstall.sh            self-contained uninstaller (macOS/Linux)
+install/uninstall.ps1           self-contained uninstaller (Windows)
+uninstall.sh, uninstall.ps1     repo-root uninstall entry points
+uninstall-macos.sh              single-file macOS uninstaller (copy anywhere)
+tools/test-uninstall.sh         uninstaller test suite
 ```
 
 Validate everything after edits with:

@@ -132,68 +132,8 @@ lcars_platform_install() {
     lcars_log "  choose assets/lcars-frame-termapp@2x.png for the best result"
 }
 
-lcars_platform_uninstall() {
-    [ "$(uname -s)" = "Darwin" ] || return 0
-    if [ ! -f "$LCARS_MANIFEST" ]; then
-        return 0
-    fi
-    local installed changed prev_def prev_start profile
-    installed="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" installed)"
-    [ "$installed" = "true" ] || return 0
-    changed="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" changed_default)"
-    prev_def="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" prev_default)"
-    prev_start="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" prev_startup)"
-    profile="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" profile)"
-    : "${profile:=LCARS}"
-
-    lcars_step "Terminal.app cleanup"
-    if [ "$changed" = "true" ]; then
-        if [ -n "$prev_def" ]; then
-            lcars_run defaults write com.apple.Terminal 'Default Window Settings' -string "$prev_def"
-            lcars_log "default profile restored to '$prev_def'"
-        else
-            lcars_run defaults delete com.apple.Terminal 'Default Window Settings' 2>/dev/null || true
-        fi
-        if [ -n "$prev_start" ]; then
-            lcars_run defaults write com.apple.Terminal 'Startup Window Settings' -string "$prev_start"
-        fi
-    fi
-
-    if pgrep -x Terminal >/dev/null 2>&1; then
-        lcars_warn "Terminal.app is running — remove the profile manually:"
-        lcars_warn "  Terminal > Settings > Profiles > ${profile} > minus button"
-    elif lcars_dry; then
-        printf '   [dry-run] remove profile %s from com.apple.Terminal\n' "$profile"
-    else
-        if /usr/libexec/PlistBuddy -c "Delete :Window Settings:${profile}" \
-            "$HOME/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null; then
-            killall cfprefsd 2>/dev/null || true
-            lcars_log "removed Terminal.app profile '${profile}'"
-        else
-            lcars_warn "could not remove the profile automatically:"
-            lcars_warn "  Terminal > Settings > Profiles > ${profile} > minus button"
-        fi
-    fi
-}
-
-lcars_platform_restore() {
-    [ "$(uname -s)" = "Darwin" ] || return 0
-    if [ ! -f "$LCARS_MANIFEST" ]; then
-        return 0
-    fi
-    local changed prev_def prev_start
-    changed="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" changed_default)"
-    [ "$changed" = "true" ] || return 0
-    prev_def="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" prev_default)"
-    prev_start="$("$LCARS_PYTHON" "$LCARS_LIB/manifest.py" terminal-field "$LCARS_MANIFEST" prev_startup)"
-    if [ -n "$prev_def" ]; then
-        lcars_run defaults write com.apple.Terminal 'Default Window Settings' -string "$prev_def"
-        lcars_log "Terminal.app default profile restored to '$prev_def'"
-    fi
-    if [ -n "$prev_start" ]; then
-        lcars_run defaults write com.apple.Terminal 'Startup Window Settings' -string "$prev_start"
-    fi
-}
+# Terminal.app cleanup (profile + default restoration) lives in
+# install/uninstall.sh, which is copied to $LCARS_DIR/uninstall.sh.
 
 case "$MODE" in
     install)
@@ -203,9 +143,17 @@ case "$MODE" in
         lcars_install "$LCARS_REPO" "$WITH_GHOSTTY" "$WITH_SHELL" "$WITH_TMUX"
         ;;
     uninstall)
-        lcars_uninstall "$PURGE"
+        set --
+        [ "$LCARS_DRY_RUN" = 1 ] && set -- "$@" --dry-run
+        [ "$LCARS_ASSUME_YES" = 1 ] && set -- "$@" --yes
+        [ "$PURGE" = 1 ] && set -- "$@" --purge
+        exec sh "$LCARS_HERE/uninstall.sh" "$@"
         ;;
     restore)
-        lcars_restore_cmd "$RESTORE_TS"
+        set -- --restore
+        [ "$LCARS_DRY_RUN" = 1 ] && set -- "$@" --dry-run
+        [ "$LCARS_ASSUME_YES" = 1 ] && set -- "$@" --yes
+        [ -n "$RESTORE_TS" ] && set -- "$@" "$RESTORE_TS"
+        exec sh "$LCARS_HERE/uninstall.sh" "$@"
         ;;
 esac

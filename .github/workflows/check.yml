@@ -27,7 +27,30 @@ jobs:
           bash -n install/common.sh
           bash -n install/linux.sh
           bash -n install/macos.sh
+          bash -n install/uninstall.sh
+          bash -n uninstall.sh
+          bash -n uninstall-macos.sh
           bash -n shell/shell.sh
+          bash -n tools/test-uninstall.sh
+
+      - name: Uninstaller tests
+        run: bash tools/test-uninstall.sh
+
+      - name: PowerShell syntax
+        run: |
+          if ! command -v pwsh >/dev/null 2>&1; then
+            echo "pwsh not available; skipping"
+            exit 0
+          fi
+          for f in install/windows.ps1 install/uninstall.ps1 uninstall.ps1; do
+            echo "parsing $f"
+            pwsh -NoProfile -Command - <<EOF
+          \$tokens = \$null
+          \$errs = \$null
+          [System.Management.Automation.Language.Parser]::ParseFile('$f', [ref]\$tokens, [ref]\$errs) | Out-Null
+          if (\$errs) { \$errs | ForEach-Object { Write-Error \$_.ToString() }; exit 1 }
+          EOF
+          done
 
       - name: Generated assets are up to date
         run: |

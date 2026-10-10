@@ -231,19 +231,6 @@ function Add-MarkedBlock([string]$Path, [string]$Content) {
     Invoke-Dry { $utf8 = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $updated, $utf8) } "update marked block in $Path"
 }
 
-function Remove-MarkedBlock([string]$Path) {
-    if (-not (Test-Path $Path)) { return }
-    $text = [System.IO.File]::ReadAllText($Path)
-    if ($text.IndexOf($MarkStart) -lt 0) {
-        Write-Warn "marker missing in $Path (hand-edited?) - leaving it alone"
-        return
-    }
-    $pattern = "(?ms)^\s*" + [regex]::Escape($MarkStart) + ".*?" + [regex]::Escape($MarkEnd) + "\s*"
-    $updated = [regex]::Replace($text, $pattern, '')
-    Invoke-Dry { $utf8 = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $updated, $utf8) } "clean $Path"
-    Write-Info "cleaned $Path"
-}
-
 function Read-Manifest {
     if (Test-Path $Script:ManifestPath) {
         return (Get-Content -Raw -LiteralPath $Script:ManifestPath | ConvertFrom-Json)
@@ -320,6 +307,8 @@ function Install-Lcars {
     Copy-Owned (Join-Path $HERE '..\fastfetch\config.jsonc') (Join-Path $LcarsDir 'fastfetch.jsonc')
     Copy-Owned (Join-Path $HERE '..\powershell\profile.ps1') (Join-Path $LcarsDir 'profile.ps1')
     Copy-Owned (Join-Path $HERE '..\tmux\lcars.conf') (Join-Path $LcarsDir 'tmux.conf')
+    # Self-contained uninstaller: survives deletion/moving of the repository.
+    Copy-Owned (Join-Path $HERE 'uninstall.ps1') (Join-Path $LcarsDir 'uninstall.ps1')
     foreach ($sound in Get-ChildItem -Path (Join-Path $HERE '..\sounds') -Filter '*.wav') {
         if ($NoSounds) { continue }
         Copy-Owned $sound.FullName (Join-Path (Join-Path $LcarsDir 'sounds') $sound.Name)
@@ -484,150 +473,34 @@ function Install-Lcars {
         Write-Info "LCARS installed to $LcarsDir"
         Write-Info "open a NEW Windows Terminal tab to see the theme"
         Write-Info 'toggles: $env:LCARS_SPLASH=0, $env:LCARS_SOUND=0'
-        Write-Info "uninstall: powershell -File install\windows.ps1 -Uninstall"
+        Write-Info "uninstall: powershell -File `"$LcarsDir\uninstall.ps1`""
     }
-}
-
-# --- uninstall ---------------------------------------------------------------
-
-function Uninstall-Lcars {
-    $manifest = Read-Manifest
-    Write-Step "Uninstalling LCARS"
-    if (-not $manifest) {
-        Write-Warn "no manifest at $Script:ManifestPath - running best-effort cleanup"
-    }
-
-    if ($manifest) {
-        foreach ($entry in @($manifest.patched)) {
-            if ($entry.path) { Remove-MarkedBlock $entry.path }
-        }
-    }
-
-    # Windows Terminal: remove scheme + profile, restore default
-    if ($manifest -and $manifest.json_patch) {
-        $patch = $manifest.json_patch
-        if ($patch.settings_path -and (Test-Path $patch.settings_path)) {
-            Write-Step "Windows Terminal cleanup"
-            $settings = Read-JsonFile $patch.settings_path
-            if (-not $DryRun) {
-                $schemeList = @(Get-PropertyValue $settings 'schemes' @()) |
-                    Where-Object { $_.name -ne $patch.scheme }
-                Set-PropertyValue $settings 'schemes' @($schemeList)
-                $profilesNode = Get-PropertyValue $settings 'profiles' $null
-                if ($profilesNode) {
-                    $list = @(Get-PropertyValue $profilesNode 'list' @())
-                    Set-PropertyValue $profilesNode 'list' @($list | Where-Object { $_.guid -ne $patch.profile_guid })
-                }
-                $currentDefault = Get-PropertyValue $settings 'defaultProfile' $null
-                if ($patch.changed_default -and $currentDefault -eq $patch.profile_guid) {
-                    Set-PropertyValue $settings 'defaultProfile' $patch.prev_default
-                    Write-Info "default profile restored to $($patch.prev_default)"
-                }
-                Write-JsonFile $patch.settings_path $settings
-                Write-Info "removed scheme and profile from $($patch.settings_path)"
-            } else {
-                Write-Host "   [dry-run] remove scheme/profile from $($patch.settings_path)"
-            }
-        }
-    }
-
-    # owned files
-    if ($manifest) {
-        foreach ($path in @($manifest.created)) {
-            if (-not $path) { continue }
-            if (-not $path.StartsWith($LcarsDir, [System.StringComparison]::OrdinalIgnoreCase)) {
-                Write-Warn "refusing to delete path outside LCARS dir: $path"
-                continue
-            }
-            if (Test-Path -LiteralPath $path -PathType Container) { continue }
-            if (Test-Path -LiteralPath $path) {
-                Invoke-Dry { Remove-Item -Force -LiteralPath $path -ErrorAction SilentlyContinue } "rm $path"
-            }
-        }
-        # remove now-empty directories, deepest first
-        if ((Test-Path $LcarsDir) -and -not $DryRun) {
-            $dirs = Get-ChildItem -Path $LcarsDir -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notlike '*\backups*' } |
-                Sort-Object { $_.FullName.Length } -Descending
-            foreach ($dir in $dirs) {
-                if (-not (Get-ChildItem -Path $dir.FullName -Force -ErrorAction SilentlyContinue)) {
-                    Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue
-                }
-            }
-        }
-    }
-
-    if ($Purge -and (Test-Path $LcarsDir)) {
-        if ($manifest -or $Yes) {
-            Invoke-Dry { Remove-Item -Recurse -Force -LiteralPath $LcarsDir } "purge $LcarsDir (including backups)"
-            Write-Info "purged $LcarsDir"
-        } else {
-            Write-Warn "refusing to purge without a manifest; use -Yes"
-        }
-    }
-
-    if (Test-Path $Script:ManifestPath) { Invoke-Dry { Remove-Item -Force $Script:ManifestPath } "rm $Script:ManifestPath" }
-
-    Write-Step "Done"
-    Write-Info "restart Windows Terminal for a clean shell"
-    if (-not $Purge -and (Test-Path (Join-Path $LcarsDir 'backups'))) {
-        Write-Info "backups kept in $LcarsDir\backups (use -Purge to remove)"
-    }
-}
-
-# --- restore -----------------------------------------------------------------
-
-function Restore-Lcars([string]$Stamp) {
-    $manifest = Read-Manifest
-    if (-not $manifest) { Write-Fail "no manifest found at $Script:ManifestPath" }
-
-    $dir = $null
-    if ($Stamp) {
-        $dir = Join-Path (Join-Path $LcarsDir 'backups') $Stamp
-        if (-not (Test-Path $dir)) { Write-Fail "backup directory not found: $dir" }
-    } else {
-        $dir = $manifest.backup_dir
-        if (-not $dir -or -not (Test-Path $dir)) {
-            Write-Warn "no backup directory recorded (nothing needed backing up)"
-            return
-        }
-    }
-
-    Write-Step "Restoring files from $dir"
-    foreach ($entry in @($manifest.patched)) {
-        $path = $entry.path
-        if (-not $path -or -not $entry.backup) { continue }
-        $rel = $path
-        if ($path.StartsWith($env:USERPROFILE, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $rel = $path.Substring($env:USERPROFILE.Length).TrimStart('\')
-        } else {
-            $rel = $path.TrimStart('\')
-        }
-        $src = Join-Path $dir $rel
-        if (Test-Path $src) {
-            Invoke-Dry { Copy-Item -Force -LiteralPath $src -Destination $path } "restore $path"
-            Write-Info "restored $path"
-        }
-    }
-    if ($manifest.json_patch -and $manifest.json_patch.backup -and (Test-Path $manifest.json_patch.backup)) {
-        Invoke-Dry { Copy-Item -Force -LiteralPath $manifest.json_patch.backup -Destination $manifest.json_patch.settings_path } "restore $($manifest.json_patch.settings_path)"
-        Write-Info "restored $($manifest.json_patch.settings_path)"
-    }
-    Write-Step "Done"
-    if ($DryRun) { Write-Info "dry-run complete - nothing was changed" }
-    else { Write-Info "files rolled back to their pre-install state; run -Reinstall to re-enable LCARS" }
 }
 
 # --- dispatch ----------------------------------------------------------------
 
+# Uninstall and restore live in install\uninstall.ps1 (also copied to
+# $LcarsDir\uninstall.ps1) so they keep working after the repo is gone.
+$Uninstaller = Join-Path $Here 'uninstall.ps1'
+
 try {
-    if ($Uninstall) {
-        Uninstall-Lcars
-    } elseif ($Restore) {
-        Restore-Lcars $RestoreStamp
-    } else {
-        Install-Lcars
+    if ($Uninstall -or $Restore) {
+        if (-not (Test-Path $Uninstaller)) {
+            Write-Fail "uninstaller not found at $Uninstaller"
+        }
+        $forward = @()
+        if ($DryRun) { $forward += '-DryRun' }
+        if ($Yes) { $forward += '-Yes' }
+        if ($Purge) { $forward += '-Purge' }
+        if ($Restore) { $forward += '-Restore' }
+        if ($RestoreStamp) { $forward += @('-RestoreStamp', $RestoreStamp) }
+        if ($LcarsDir) { $forward += @('-LcarsDir', $LcarsDir) }
+        if ($SettingsPath) { $forward += @('-SettingsPath', $SettingsPath) }
+        if ($ProfilePath) { $forward += @('-ProfilePath', $ProfilePath) }
+        & $Uninstaller @forward
+        exit $LASTEXITCODE
     }
+    Install-Lcars
 } catch {
     Write-Fail $_.Exception.Message
 }
