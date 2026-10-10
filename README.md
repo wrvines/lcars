@@ -47,19 +47,41 @@ sh install/macos.sh
 powershell -ExecutionPolicy Bypass -File install\windows.ps1
 ```
 
-Always rehearsable and reversible:
+### Uninstalling
+
+Run the installer matching the platform you installed with, from the repository
+root — the scripts share `~/.config/lcars`, but only the right script knows how
+to undo that platform's integration (Terminal.app, Windows Terminal):
+
+```sh
+sh install/linux.sh --uninstall                 # Linux
+sh install/macos.sh --uninstall                 # macOS
+sh install/macos.sh --uninstall --purge         # macOS, also delete backups
+powershell -ExecutionPolicy Bypass -File install\windows.ps1 -Uninstall
+```
+
+Then open a new terminal window/tab. `--uninstall` removes the marked config
+blocks and the files the installer created, restores whatever default it
+changed, and deletes its manifest at `~/.config/lcars/.lcars-install.json`.
+Because that manifest is gone, `--restore` and `--reinstall` no longer work
+afterwards, and another platform's installer can no longer finish the cleanup —
+so use the same script you installed with. Backups stay on disk unless you add
+`--purge` (`-Uninstall -Purge` on Windows).
+
+### Other modes
+
+These are alternatives, not a sequence — run the one you want, substituting
+your platform's script for `linux.sh` (`macos.sh`; or `windows.ps1` with
+single-dash flags `-DryRun`, `-Restore`, `-RestoreStamp`, `-Reinstall`):
 
 ```sh
 sh install/linux.sh --dry-run      # show every change, touch nothing
-sh install/linux.sh --uninstall    # remove blocks + LCARS files
-sh install/linux.sh --uninstall --purge   # also delete backups
 sh install/linux.sh --restore      # roll files back to pre-install state
 sh install/linux.sh --restore 20260919-193010   # a specific backup stamp
 sh install/linux.sh --reinstall    # refresh files over an existing install
 ```
 
-`macos.sh` and `windows.ps1` accept the same options (PowerShell uses
-`-DryRun`, `-Uninstall`, `-Purge`, `-Restore`, `-RestoreStamp`, `-Reinstall`).
+`--dry-run` combines with any mode, e.g. `--uninstall --dry-run`.
 
 After installing, open a new terminal window/tab.
 
