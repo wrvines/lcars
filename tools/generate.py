@@ -35,7 +35,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PALETTE = json.loads((ROOT / "palette" / "lcars.json").read_text())
-COLORS = {}
 
 
 def hex_rgb(value: str) -> tuple[int, int, int]:

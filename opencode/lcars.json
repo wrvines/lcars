@@ -39,8 +39,9 @@
     "lightGreen": "#3d9a57",
     "lightCyan": "#318795",
     "lightYellow": "#b0851f",
-    "lcarsAmber": "#FFAA55",
-    "lcarsSunset": "#FF9900"
+    "lcarsSunset": "#FF9900",
+    "lcarsIce": "#99CCFF",
+    "lcarsIndigo": "#3355AA"
   },
   "theme": {
     "primary": {
@@ -72,8 +73,8 @@
       "light": "lightCyan"
     },
     "text": {
-      "dark": "lcarsAmber",
-      "light": "lcarsAmber"
+      "dark": "lcarsIce",
+      "light": "lcarsIndigo"
     },
     "textMuted": {
       "dark": "darkStep11",

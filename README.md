@@ -166,7 +166,8 @@ window — if that happens, unset `custom-shader` and reload.
 
 `opencode/lcars.json` is a drop-in [opencode](https://opencode.ai) theme built
 from the bundled `opencode` theme with two LCARS changes: the text you type is
-amber (`#FFAA55`) and bold items in replies are sunset (`#FF9900`).
+ice (`#99CCFF`) and bold items in replies are sunset (`#FF9900`). The cool input
+color keeps what you type distinct from the warm emphasis in replies.
 
 ```sh
 mkdir -p ~/.config/opencode/themes
@@ -223,7 +224,7 @@ tools/check.py                  repo self-check (run before shipping changes)
 ghostty/                        theme, config, frame + CRT shaders
 terminal-app/LCARS.terminal     generated Terminal.app profile
 windows/                        WT color scheme + profile snippet
-opencode/lcars.json             opencode TUI theme (amber input, sunset bold)
+opencode/lcars.json             opencode TUI theme (ice input, sunset bold)
 prompt/starship.toml            shared prompt for zsh/bash/PowerShell
 fastfetch/config.jsonc          splash config (Kitty image on Ghostty)
 tmux/lcars.conf                 status bar theme

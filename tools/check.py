@@ -75,10 +75,24 @@ def check_ghostty(palette: dict, values: set) -> None:
         if shader not in conf:
             warn(f"ghostty/ghostty.conf: {shader}.glsl not referenced")
     frame = (ROOT / "ghostty" / "shaders" / "lcars-frame.glsl").read_text()
-    for match in re.finditer(r"#[0-9A-Fa-f]{6}", frame):
-        if not known(values, match.group(0)):
-            error(f"ghostty shader: color {match.group(0)} in lcars-frame.glsl "
+    const = re.compile(
+        r"const\s+vec3\s+(\w+)\s*=\s*vec3\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)"
+        r"\s*;\s*//\s*(#[0-9A-Fa-f]{6})"
+    )
+    shader_colors = list(const.finditer(frame))
+    for match in shader_colors:
+        name = match.group(1)
+        rgb = tuple(round(float(match.group(i)) * 255) for i in (2, 3, 4))
+        actual = "#%02X%02X%02X" % rgb
+        stated = match.group(5).upper()
+        if actual != stated:
+            error(f"ghostty shader: {name} vec3 is {actual} but its comment says {stated}")
+        if not known(values, stated):
+            error(f"ghostty shader: {name} color {stated} in lcars-frame.glsl "
                   "not in palette/lcars.json")
+    if not shader_colors:
+        error("ghostty shader: no `const vec3 NAME = vec3(...) // #RRGGBB` colors "
+              "found in lcars-frame.glsl (cannot validate against the palette)")
 
 
 def check_opencode(values: set) -> None:
@@ -269,6 +283,14 @@ def check_scripts() -> None:
             error(f"powershell/profile.ps1: references missing sounds/{sound}.wav")
 
 
+def check_color_sources(values: set) -> None:
+    """Every hex color in these hand-written configs must come from the palette."""
+    for rel in ("prompt/starship.toml", "powershell/profile.ps1"):
+        for match in re.finditer(r"#[0-9A-Fa-f]{6}", (ROOT / rel).read_text()):
+            if not known(values, match.group(0)):
+                error(f"{rel}: color {match.group(0)} not in palette/lcars.json")
+
+
 def main() -> int:
     palette = load_palette()
     values = {v.upper() for section in ("colors", "ansi")
@@ -283,6 +305,7 @@ def main() -> int:
     check_assets()
     check_shader_syntax()
     check_scripts()
+    check_color_sources(values)
 
     for warning in WARNINGS:
         print(f"warning: {warning}")
